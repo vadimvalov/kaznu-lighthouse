@@ -15,22 +15,22 @@ const redis = new Redis({
 
 async function checkUsers() {
   try {
-    console.log("🔍 Проверяем пользователей в Redis...\n");
+    console.log("🔍 Проверяем чаты в Redis...\n");
 
     // Проверяем подключение
     const pong = await redis.ping();
     console.log(`✅ Redis подключен: ${pong}\n`);
 
-    // Получаем всех пользователей
-    const users = await redis.smembers("bot:users");
+    // Получаем все чаты
+    const chats = await redis.smembers("bot:chats");
 
-    if (users.length === 0) {
-      console.log("📭 Список пользователей пуст");
+    if (chats.length === 0) {
+      console.log("📭 Список чатов пуст");
     } else {
-      console.log(`👥 Найдено пользователей: ${users.length}`);
-      console.log("📋 Список пользователей:");
-      users.forEach((userId, index) => {
-        console.log(`  ${index + 1}. ID: ${userId}`);
+      console.log(`👥 Найдено чатов: ${chats.length}`);
+      console.log("📋 Список чатов:");
+      chats.forEach((chatId, index) => {
+        console.log(`  ${index + 1}. ID: ${chatId}`);
       });
     }
 
@@ -45,13 +45,13 @@ async function checkUsers() {
       });
     }
 
-    // Показываем информацию о ключе "bot:users"
-    if (keys.includes("bot:users")) {
-      console.log("\n📊 Информация о ключе 'bot:users':");
-      const userCount = await redis.scard("bot:users");
-      const userType = await redis.type("bot:users");
-      console.log(`  Тип: ${userType}`);
-      console.log(`  Количество элементов: ${userCount}`);
+    // Показываем информацию о ключе "bot:chats"
+    if (keys.includes("bot:chats")) {
+      console.log("\n📊 Информация о ключе 'bot:chats':");
+      const chatCount = await redis.scard("bot:chats");
+      const chatType = await redis.type("bot:chats");
+      console.log(`  Тип: ${chatType}`);
+      console.log(`  Количество элементов: ${chatCount}`);
     }
   } catch (error) {
     console.error("❌ Ошибка:", error.message);

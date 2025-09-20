@@ -2,7 +2,7 @@ import Queue from "bull";
 import { Bot } from "grammy";
 import fs from "fs";
 import path from "path";
-import { UserRepository } from "./user-repository.js";
+import { ChatRepository } from "./chat-repository.js";
 
 interface Lesson {
   start_time: string;
@@ -12,26 +12,26 @@ interface Lesson {
 type Schedule = Record<string, Lesson[]>;
 
 interface JobData {
-  userId: string;
+  chatId: string;
   message: string;
 }
 
 export class NotificationService {
   private bot: Bot;
   private queue: Queue.Queue<JobData>;
-  private userRepository: UserRepository;
+  private chatRepository: ChatRepository;
   private schedule: Schedule;
 
-  constructor(bot: Bot, userRepository: UserRepository) {
+  constructor(bot: Bot, chatRepository: ChatRepository) {
     this.bot = bot;
-    this.userRepository = userRepository;
+    this.chatRepository = chatRepository;
 
     this.queue = new Queue<JobData>("notifications", {
       redis: { host: "127.0.0.1", port: 6379 },
     });
 
     this.queue.process(async (job) => {
-      await this.bot.api.sendMessage(job.data.userId, job.data.message);
+      await this.bot.api.sendMessage(job.data.chatId, job.data.message);
     });
 
     const file = path.resolve(process.cwd(), "src/public/schedule.json");
@@ -52,14 +52,14 @@ export class NotificationService {
         ? "занятия"
         : "занятий";
 
-    const msg = `🫶 Доброе утро! Сегодня ${new Date().getDate()} ${new Date().toLocaleDateString(
+    const msg = `🫶 Доброе утро! Сегодня ${new Date().getDate()} число, ${new Date().toLocaleDateString(
       "ru-RU",
       { month: "long" }
-    )} и у нас ${lessonCount} ${lessonWord}`;
+    )}, и у нас ${lessonCount} ${lessonWord}`;
 
-    const users = await this.userRepository.getUsers();
-    for (const id of users) {
-      await this.queue.add({ userId: id, message: msg });
+    const chats = await this.chatRepository.getChats();
+    for (const id of chats) {
+      await this.queue.add({ chatId: id, message: msg });
     }
   }
 
@@ -116,10 +116,18 @@ export class NotificationService {
       .toLocaleDateString("en-US", { weekday: "long" })
       .toLowerCase();
     const lessons = this.schedule[dayKey] ?? [];
+    console.log(
+      `📅 Day: ${dayKey}, Lessons:`,
+      lessons.map((l) => l.start_time)
+    );
     if (lessons.length === 0) return;
 
     const groups = this.groupLessons(lessons);
-    const users = await this.userRepository.getUsers();
+    console.log(
+      `📚 Lesson groups:`,
+      groups.map((g) => g.map((l) => l.start_time))
+    );
+    const chats = await this.chatRepository.getChats();
 
     const activeJobs = await this.queue.getJobs([
       "waiting",
@@ -134,6 +142,10 @@ export class NotificationService {
       for (let i = 0; i < group.length; i++) {
         const lesson = group[i];
         if (!lesson) continue;
+
+        console.log(
+          `🕐 Processing lesson: ${lesson.start_time} - ${lesson.course}`
+        );
 
         const [hours, minutes] = lesson.start_time.split(":").map(Number);
         if (
@@ -158,15 +170,34 @@ export class NotificationService {
           message = `👀 Следующий урок ${lesson.course} начнется через 10 минут и пройдет в ${lesson.room}`;
         }
 
-        if (notifyAt <= new Date()) continue;
+        console.log(
+          `⏰ Lesson ${
+            lesson.start_time
+          }: notify at ${notifyAt.toLocaleTimeString()}, current time: ${new Date().toLocaleTimeString()}`
+        );
 
-        for (const id of users) {
+        if (notifyAt <= new Date()) {
+          console.log(
+            `❌ Skipping lesson ${lesson.start_time} - notification time has passed`
+          );
+          continue;
+        }
+
+        for (const id of chats) {
           const jobId = `lesson-${lesson.start_time}-${id}`;
 
-          if (activeJobIds.has(jobId)) continue;
+          if (activeJobIds.has(jobId)) {
+            console.log(
+              `⚠️ Job already exists for lesson ${lesson.start_time} - chat ${id}`
+            );
+            continue;
+          }
 
+          console.log(
+            `✅ Creating job for lesson ${lesson.start_time} - chat ${id}`
+          );
           await this.queue.add(
-            { userId: id, message },
+            { chatId: id, message },
             {
               delay: notifyAt.getTime() - Date.now(),
               jobId,

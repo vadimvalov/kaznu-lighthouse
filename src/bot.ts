@@ -2,16 +2,24 @@ import "dotenv/config";
 import { Bot } from "grammy";
 import cron from "node-cron";
 import { NotificationService } from "./services/notificationService.js";
-import { UserRepository } from "./services/user-repository.js";
+import { ChatRepository } from "./services/chat-repository.js";
 
 const bot = new Bot(process.env.BOT_TOKEN!);
-const userRepository = new UserRepository();
-const service = new NotificationService(bot, userRepository);
+const chatRepository = new ChatRepository();
+const service = new NotificationService(bot, chatRepository);
 
-bot.command("start", async (ctx) => {
-  if (ctx.from?.id) {
-    await userRepository.addUser(ctx.from.id);
-    await ctx.reply("✅ Вы подписаны на уведомления");
+bot.on("my_chat_member", async (ctx) => {
+  const update = ctx.myChatMember;
+  if (update) {
+    if (update.new_chat_member.status === "member") {
+      await chatRepository.addChat(ctx.chat?.id!);
+      await ctx.reply("Хелоу всем, я буду помогать нам не просрать уроки!");
+    } else if (
+      update.new_chat_member.status === "left" ||
+      update.new_chat_member.status === "kicked"
+    ) {
+      await chatRepository.removeChat(String(ctx.chat?.id));
+    }
   }
 });
 
