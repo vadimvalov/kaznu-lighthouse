@@ -52,7 +52,7 @@ export class NotificationService {
         ? "занятия"
         : "занятий";
 
-    const msg = `Доброе утро. Сегодня ${new Date().getDate()} ${new Date().toLocaleDateString(
+    const msg = `🫶 Доброе утро! Сегодня ${new Date().getDate()} ${new Date().toLocaleDateString(
       "ru-RU",
       { month: "long" }
     )} и у нас ${lessonCount} ${lessonWord}`;
@@ -63,12 +63,62 @@ export class NotificationService {
     }
   }
 
+  private parseTimeToMinutes(time: string): number {
+    const [h, m] = time.split(":").map(Number);
+    if (
+      h === undefined ||
+      m === undefined ||
+      Number.isNaN(h) ||
+      Number.isNaN(m)
+    ) {
+      throw new Error(`Invalid time format: ${time}`);
+    }
+    return h * 60 + m;
+  }
+
+  private groupLessons(lessons: Lesson[]): Lesson[][] {
+    if (lessons.length === 0) return [];
+
+    const sorted = [...lessons].sort(
+      (a, b) =>
+        this.parseTimeToMinutes(a.start_time) -
+        this.parseTimeToMinutes(b.start_time)
+    );
+
+    const groups: Lesson[][] = [];
+    if (sorted.length === 0) return groups;
+    const firstLesson = sorted[0];
+    if (!firstLesson) return groups;
+    let currentGroup: Lesson[] = [firstLesson];
+
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = sorted[i - 1];
+      const curr = sorted[i];
+      if (!prev || !curr) continue;
+      const diff =
+        this.parseTimeToMinutes(curr.start_time) -
+        this.parseTimeToMinutes(prev.start_time);
+
+      if (diff <= 60) {
+        currentGroup.push(curr);
+      } else {
+        groups.push(currentGroup);
+        currentGroup = [curr];
+      }
+    }
+
+    groups.push(currentGroup);
+    return groups;
+  }
+
   async scheduleLessonsMessages() {
     const dayKey = new Date()
       .toLocaleDateString("en-US", { weekday: "long" })
       .toLowerCase();
     const lessons = this.schedule[dayKey] ?? [];
+    if (lessons.length === 0) return;
 
+    const groups = this.groupLessons(lessons);
     const users = await this.userRepository.getUsers();
 
     const activeJobs = await this.queue.getJobs([
@@ -76,38 +126,55 @@ export class NotificationService {
       "delayed",
       "active",
     ]);
-    const activeJobIds = new Set(activeJobs.map((job) => job.id));
+    const activeJobIds = new Set<string>(
+      activeJobs.map((job) => String(job.id))
+    );
 
-    for (const lesson of lessons) {
-      const [hours, minutes] = lesson.start_time.split(":").map(Number);
+    for (const group of groups) {
+      for (let i = 0; i < group.length; i++) {
+        const lesson = group[i];
+        if (!lesson) continue;
 
-      const start = new Date();
-      start.setHours(hours!, minutes!, 0, 0);
-
-      const notifyAt = new Date(start.getTime() - 60 * 60 * 1000);
-
-      if (notifyAt <= new Date()) {
-        continue;
-      }
-
-      const message = `Урок *${lesson.course}* начнется через час и пройдет в *${lesson.room}*`;
-
-      for (const id of users) {
-        const jobId = `lesson-${lesson.start_time}-${id}`;
-
-        if (activeJobIds.has(jobId)) {
+        const [hours, minutes] = lesson.start_time.split(":").map(Number);
+        if (
+          hours === undefined ||
+          minutes === undefined ||
+          Number.isNaN(hours) ||
+          Number.isNaN(minutes)
+        )
           continue;
+
+        const start = new Date();
+        start.setHours(hours, minutes, 0, 0);
+
+        let notifyAt: Date;
+        let message: string;
+
+        if (i === 0) {
+          notifyAt = new Date(start.getTime() - 60 * 60 * 1000);
+          message = `👀 Урок ${lesson.course} начнется через час и пройдет в ${lesson.room}`;
+        } else {
+          notifyAt = new Date(start.getTime() - 10 * 60 * 1000);
+          message = `👀 Следующий урок ${lesson.course} начнется через 10 минут и пройдет в ${lesson.room}`;
         }
 
-        await this.queue.add(
-          { userId: id, message },
-          {
-            delay: notifyAt.getTime() - Date.now(),
-            jobId: jobId,
-            removeOnComplete: true,
-            removeOnFail: true,
-          }
-        );
+        if (notifyAt <= new Date()) continue;
+
+        for (const id of users) {
+          const jobId = `lesson-${lesson.start_time}-${id}`;
+
+          if (activeJobIds.has(jobId)) continue;
+
+          await this.queue.add(
+            { userId: id, message },
+            {
+              delay: notifyAt.getTime() - Date.now(),
+              jobId,
+              removeOnComplete: true,
+              removeOnFail: true,
+            }
+          );
+        }
       }
     }
   }
