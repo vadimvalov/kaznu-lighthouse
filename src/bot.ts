@@ -33,7 +33,7 @@ bot.command("change", async (ctx) => {
 
   const scheduleName =
     newSchedule === "schedule_1" ? "первую группу" : "вторую группу";
-  await ctx.reply(`✅ Расписание переключено на ${scheduleName} расписание!`);
+  await ctx.reply(`✅ Расписание переключено на ${scheduleName}`);
 });
 
 cron.schedule("0 7 * * *", () => service.scheduleDailyMessage(), {
