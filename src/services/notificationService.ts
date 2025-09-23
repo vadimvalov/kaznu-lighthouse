@@ -38,7 +38,10 @@ export class NotificationService {
     const lessonCount = lessons.length;
     const lessonWord = getLessonWord(lessonCount);
 
-    const msg = `🫶 Доброе утро! Сегодня ${new Date().getDate()} число, ${new Date().toLocaleDateString(
+    const today = new Date();
+    const dayOfWeek = today.toLocaleDateString("ru-RU", { weekday: "long" });
+
+    const msg = `🫶 Доброе утро! Сегодня ${dayOfWeek}, ${today.getDate()} ${today.toLocaleDateString(
       "ru-RU",
       { month: "long" }
     )}, и у нас ${lessonCount} ${lessonWord}`;
