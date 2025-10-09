@@ -9,14 +9,14 @@ dotenv.config();
 const redis = new Redis({
   host: process.env.REDIS_HOST || "localhost",
   port: parseInt(process.env.REDIS_PORT || "6379", 10),
-  password: process.env.REDIS_PASSWORD || undefined,
+  ...(process.env.REDIS_PASSWORD && { password: process.env.REDIS_PASSWORD }),
   db: parseInt(process.env.REDIS_DB || "0", 10),
 });
 
 const command = process.argv[2];
 const userId = process.argv[3];
 
-async function showHelp() {
+async function showHelp(): Promise<void> {
   console.log(`
 🔧 Управление пользователями Redis
 
@@ -40,7 +40,7 @@ async function showHelp() {
 `);
 }
 
-async function listUsers() {
+async function listUsers(): Promise<void> {
   try {
     const users = await redis.smembers("bot:users");
 
@@ -54,11 +54,11 @@ async function listUsers() {
       });
     }
   } catch (error) {
-    console.error("❌ Ошибка при получении списка:", error.message);
+    console.error("❌ Ошибка при получении списка:", (error as Error).message);
   }
 }
 
-async function addUser(userId) {
+async function addUser(userId: string | undefined): Promise<void> {
   if (!userId) {
     console.error("❌ Укажите ID пользователя");
     return;
@@ -73,11 +73,11 @@ async function addUser(userId) {
       console.log(`✅ Пользователь ${userId} добавлен`);
     }
   } catch (error) {
-    console.error("❌ Ошибка при добавлении:", error.message);
+    console.error("❌ Ошибка при добавлении:", (error as Error).message);
   }
 }
 
-async function removeUser(userId) {
+async function removeUser(userId: string | undefined): Promise<void> {
   if (!userId) {
     console.error("❌ Укажите ID пользователя");
     return;
@@ -92,11 +92,11 @@ async function removeUser(userId) {
       console.log(`✅ Пользователь ${userId} удален`);
     }
   } catch (error) {
-    console.error("❌ Ошибка при удалении:", error.message);
+    console.error("❌ Ошибка при удалении:", (error as Error).message);
   }
 }
 
-async function checkUser(userId) {
+async function checkUser(userId: string | undefined): Promise<void> {
   if (!userId) {
     console.error("❌ Укажите ID пользователя");
     return;
@@ -110,20 +110,20 @@ async function checkUser(userId) {
       console.log(`❌ Пользователь ${userId} не найден`);
     }
   } catch (error) {
-    console.error("❌ Ошибка при проверке:", error.message);
+    console.error("❌ Ошибка при проверке:", (error as Error).message);
   }
 }
 
-async function countUsers() {
+async function countUsers(): Promise<void> {
   try {
     const count = await redis.scard("bot:users");
     console.log(`📊 Количество пользователей: ${count}`);
   } catch (error) {
-    console.error("❌ Ошибка при подсчете:", error.message);
+    console.error("❌ Ошибка при подсчете:", (error as Error).message);
   }
 }
 
-async function clearUsers() {
+async function clearUsers(): Promise<void> {
   try {
     const count = await redis.scard("bot:users");
     if (count === 0) {
@@ -133,11 +133,11 @@ async function clearUsers() {
       console.log(`🗑️  Удалено ${count} пользователей`);
     }
   } catch (error) {
-    console.error("❌ Ошибка при очистке:", error.message);
+    console.error("❌ Ошибка при очистке:", (error as Error).message);
   }
 }
 
-async function main() {
+async function main(): Promise<void> {
   try {
     switch (command) {
       case "list":
@@ -164,10 +164,11 @@ async function main() {
         break;
     }
   } catch (error) {
-    console.error("❌ Общая ошибка:", error.message);
+    console.error("❌ Общая ошибка:", (error as Error).message);
   } finally {
     await redis.disconnect();
   }
 }
 
 main();
+
