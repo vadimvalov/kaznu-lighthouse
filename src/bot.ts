@@ -8,6 +8,12 @@ const bot = new Bot(process.env.BOT_TOKEN!);
 const chatRepository = new ChatRepository();
 const service = new NotificationService(bot, chatRepository);
 
+bot.command("ping", async (ctx) => {
+  if (ctx.chat.type === "private") {
+    await ctx.reply("pong");
+  }
+});
+
 bot.on("my_chat_member", async (ctx) => {
   const update = ctx.myChatMember;
   if (update) {

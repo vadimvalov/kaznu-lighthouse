@@ -21,3 +21,15 @@ export type QueueStats = {
   failed: number;
   totalUsers: number;
 };
+
+export type JobData = {
+  chatId: string;
+  message: string;
+};
+
+export type GroupedLesson = {
+  course: string;
+  startTime: string;
+  endTime: string;
+  rooms: string[];
+};

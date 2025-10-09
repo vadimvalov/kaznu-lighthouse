@@ -3,18 +3,11 @@ import { Bot } from "grammy";
 import fs from "fs";
 import path from "path";
 import { ChatRepository } from "./chat-repository.js";
-
-interface Lesson {
-  start_time: string;
-  course: string;
-  room: string;
-}
-type Schedule = Record<string, Lesson[]>;
-
-interface JobData {
-  chatId: string;
-  message: string;
-}
+import type { Lesson, Schedule, JobData } from "../types.js";
+import {
+  parseTimeToMinutes,
+  groupConsecutiveLessonsByCourse,
+} from "./lib/helpers.js";
 
 export class NotificationService {
   private bot: Bot;
@@ -34,7 +27,7 @@ export class NotificationService {
       await this.bot.api.sendMessage(job.data.chatId, job.data.message);
     });
 
-    const file = path.resolve(process.cwd(), "src/public/schedule.json");
+    const file = path.resolve(process.cwd(), "public/schedule.json");
     this.schedule = JSON.parse(fs.readFileSync(file, "utf-8")) as Schedule;
   }
 
@@ -44,6 +37,13 @@ export class NotificationService {
       .toLowerCase();
     const lessons = this.schedule[dayKey] ?? [];
 
+    if (lessons.length === 0) {
+      return;
+    }
+
+    const grouped = groupConsecutiveLessonsByCourse(lessons);
+
+    // Формируем сообщение
     const lessonCount = lessons.length;
     const lessonWord =
       lessonCount === 1
@@ -53,12 +53,25 @@ export class NotificationService {
         : "занятий";
 
     const today = new Date();
+    const formattedDate = today.toLocaleDateString("ru-RU", {
+      day: "numeric",
+      month: "long",
+    });
     const dayOfWeek = today.toLocaleDateString("ru-RU", { weekday: "long" });
 
-    const msg = `🫶 Доброе утро! Сегодня ${dayOfWeek}, ${today.getDate()} ${today.toLocaleDateString(
-      "ru-RU",
-      { month: "long" }
-    )}, и у нас ${lessonCount} ${lessonWord}`;
+    let msg = `📅 Доброе утро! Сегодня ${dayOfWeek}, ${formattedDate}, у нас ${lessonCount} ${lessonWord}:\n\n`;
+
+    for (const group of grouped) {
+      const timeRange =
+        group.startTime === group.endTime
+          ? `🕐 ${group.startTime}`
+          : `🕐 ${group.startTime}-${group.endTime}`;
+
+      msg += `${timeRange} • ${group.course}\n`;
+      msg += `📍 ${group.rooms.join(", ")}\n\n`;
+    }
+
+    msg += "Всем удачики!";
 
     const chats = await this.chatRepository.getChats();
     for (const id of chats) {
@@ -66,26 +79,12 @@ export class NotificationService {
     }
   }
 
-  private parseTimeToMinutes(time: string): number {
-    const [h, m] = time.split(":").map(Number);
-    if (
-      h === undefined ||
-      m === undefined ||
-      Number.isNaN(h) ||
-      Number.isNaN(m)
-    ) {
-      throw new Error(`Invalid time format: ${time}`);
-    }
-    return h * 60 + m;
-  }
-
   private groupLessons(lessons: Lesson[]): Lesson[][] {
     if (lessons.length === 0) return [];
 
     const sorted = [...lessons].sort(
       (a, b) =>
-        this.parseTimeToMinutes(a.start_time) -
-        this.parseTimeToMinutes(b.start_time)
+        parseTimeToMinutes(a.start_time) - parseTimeToMinutes(b.start_time)
     );
 
     const groups: Lesson[][] = [];
@@ -99,8 +98,8 @@ export class NotificationService {
       const curr = sorted[i];
       if (!prev || !curr) continue;
       const diff =
-        this.parseTimeToMinutes(curr.start_time) -
-        this.parseTimeToMinutes(prev.start_time);
+        parseTimeToMinutes(curr.start_time) -
+        parseTimeToMinutes(prev.start_time);
 
       if (diff <= 60) {
         currentGroup.push(curr);
