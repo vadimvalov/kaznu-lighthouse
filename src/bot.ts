@@ -3,6 +3,7 @@ import { Bot } from "grammy";
 import cron from "node-cron";
 import { NotificationService } from "./services/notificationService.js";
 import { ChatRepository } from "./services/chat-repository.js";
+import { scheduleScrapper } from "./services/scheduleScrapper.js";
 
 const bot = new Bot(process.env.BOT_TOKEN!);
 const chatRepository = new ChatRepository();
@@ -28,6 +29,14 @@ bot.on("my_chat_member", async (ctx) => {
     }
   }
 });
+
+cron.schedule(
+  "59 6 * * *",
+  async () => {
+    await scheduleScrapper();
+  },
+  { timezone: "Asia/Almaty" }
+);
 
 cron.schedule("0 7 * * *", () => service.scheduleDailyMessage(), {
   timezone: "Asia/Almaty",

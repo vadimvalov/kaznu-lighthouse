@@ -45,12 +45,7 @@ export class NotificationService {
 
     // Формируем сообщение
     const lessonCount = lessons.length;
-    const lessonWord =
-      lessonCount === 1
-        ? "занятие"
-        : lessonCount >= 2 && lessonCount <= 4
-        ? "занятия"
-        : "занятий";
+    const lessonWord = lessonCount === 1 ? "lesson" : "lessons";
 
     const today = new Date();
     const formattedDate = today.toLocaleDateString("ru-RU", {
@@ -59,7 +54,7 @@ export class NotificationService {
     });
     const dayOfWeek = today.toLocaleDateString("ru-RU", { weekday: "long" });
 
-    let msg = `📅 Доброе утро! Сегодня ${dayOfWeek}, ${formattedDate}, у нас ${lessonCount} ${lessonWord}:\n\n`;
+    let msg = `📅 Good morning! Today is ${dayOfWeek}, ${formattedDate}, we have ${lessonCount} ${lessonWord}:\n\n`;
 
     for (const group of grouped) {
       const timeRange =
@@ -166,10 +161,10 @@ export class NotificationService {
 
         if (i === 0) {
           notifyAt = new Date(start.getTime() - 60 * 60 * 1000);
-          message = `👀 Урок ${lesson.course} начнется через час и пройдет в ${lesson.room}`;
+          message = `👀 The lesson ${lesson.course} will start in one hour and will take place in ${lesson.room}`;
         } else {
           notifyAt = new Date(start.getTime() - 10 * 60 * 1000);
-          message = `👀 Следующий урок ${lesson.course} начнется через 10 минут и пройдет в ${lesson.room}`;
+          message = `👀 The next lesson ${lesson.course} will start in 10 minutes and will take place in ${lesson.room}`;
         }
 
         console.log(

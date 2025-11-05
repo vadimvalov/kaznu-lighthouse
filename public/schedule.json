@@ -1,107 +1,112 @@
 {
   "monday": [
     {
+      "start_time": "16:00",
+      "course": "Foreign Language (professional) (Chinese Language I)(seminar)",
+      "room": "ФИТ 309"
+    },
+    {
       "start_time": "17:00",
-      "course": "Китайский",
-      "room": "NPU Campus"
+      "course": "Foreign Language (professional) (Chinese Language I)(lecture)",
+      "room": "ФИТ 309"
     },
     {
       "start_time": "18:00",
-      "course": "Китайский",
-      "room": "NPU Campus"
-    },
-    {
-      "start_time": "19:00",
-      "course": "История и философия науки",
-      "room": "119 (ФИТ)"
+      "course": "Foreign Language (professional) (Chinese Language I)(seminar)",
+      "room": "ФИТ 309"
     }
   ],
   "tuesday": [
     {
       "start_time": "17:00",
-      "course": "Педагогика высшей школы",
-      "room": "Желтый зал"
+      "course": "Pedagogy of Higher education(lecture)",
+      "room": "ФИТ 327"
     }
   ],
   "wednesday": [
     {
       "start_time": "17:00",
-      "course": "История и философия науки",
-      "room": "519 (БИО)"
+      "course": "History and philosophy of science(lecture)",
+      "room": "BIO 519"
     },
     {
       "start_time": "18:00",
-      "course": "Педагогика высшей школы",
-      "room": "411 (ФИТ)"
+      "course": "Pedagogy of Higher education(seminar)",
+      "room": "ФИТ 411"
     },
     {
       "start_time": "19:00",
-      "course": "Педагогика высшей школы",
-      "room": "411 (ФИТ)"
+      "course": "Pedagogy of Higher education(seminar)",
+      "room": "ФИТ 411"
+    },
+    {
+      "start_time": "20:00",
+      "course": "History and philosophy of science(seminar)",
+      "room": "BIO 330"
     }
   ],
   "friday": [
     {
       "start_time": "17:00",
-      "course": "Вычислительный интеллект",
-      "room": "Желтый зал"
+      "course": "Computational Intelligence: Theory and Methods (NPU)(lecture)",
+      "room": "МЕХ Желты"
     },
     {
       "start_time": "18:00",
-      "course": "Формальные методы и приложения",
-      "room": "302 (ФИТ)"
+      "course": "Formal Methods and Applications(seminar)",
+      "room": "ФИТ 302 а"
     },
     {
       "start_time": "19:00",
-      "course": "Формальные методы и приложения",
-      "room": "302 (ФИТ)"
+      "course": "Formal Methods and Applications(seminar)",
+      "room": "ФИТ 302 а"
     }
   ],
   "saturday": [
     {
       "start_time": "09:00",
-      "course": "Формальные методы и приложения",
-      "room": "422 (ФИТ)"
+      "course": "Formal Methods and Applications(lecture)",
+      "room": "МЕХ 325"
     },
     {
       "start_time": "10:00",
-      "course": "Алгоритмы",
-      "room": "402 (ФИТ)"
+      "course": "Algorithms(seminar)",
+      "room": "ФИТ 402"
     },
     {
       "start_time": "11:00",
-      "course": "Алгоритмы",
-      "room": "402 (ФИТ)"
+      "course": "Algorithms(seminar)",
+      "room": "ФИТ 402"
     },
     {
       "start_time": "12:00",
-      "course": "Алгоритмы",
-      "room": "402 (ФИТ)"
+      "course": "Algorithms(lecture)",
+      "room": "ФИТ 402"
     },
     {
       "start_time": "13:00",
-      "course": "Вычислительный интеллект",
-      "room": "309 (ФИТ)"
+      "course": "Computational Intelligence: Theory and Methods (NPU)(seminar)",
+      "room": "ФИТ 309"
     },
     {
       "start_time": "14:00",
-      "course": "Вычислительный интеллект",
-      "room": "309 (ФИТ)"
+      "course": "Computational Intelligence: Theory and Methods (NPU)(seminar)",
+      "room": "ФИТ 309"
     },
     {
       "start_time": "15:00",
-      "course": "Краткое введение в Китай",
-      "room": "422 (ФИТ)"
+      "course": "Brief Introduction of China(lecture)",
+      "room": "ФИТ 422"
     },
     {
       "start_time": "16:00",
-      "course": "Краткое введение в Китай",
-      "room": "422 (ФИТ)"
+      "course": "Brief Introduction of China(seminar)",
+      "room": "ФИТ 422"
     },
     {
       "start_time": "17:00",
-      "course": "Краткое введение в Китай",
-      "room": "422 (ФИТ)"
+      "course": "Brief Introduction of China(seminar)",
+      "room": "ФИТ 422"
     }
   ]
 }
