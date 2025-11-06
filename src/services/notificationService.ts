@@ -1,9 +1,9 @@
 import Queue from "bull";
 import { Bot } from "grammy";
-import fs from "fs";
-import path from "path";
 import { ChatRepository } from "./chat-repository.js";
-import type { Lesson, Schedule, JobData } from "../types.js";
+import { CredentialsRepository } from "./credentialsRepository.js";
+import { scheduleScrapper } from "./scheduleScrapper.js";
+import type { Lesson, JobData } from "../types.js";
 import {
   parseTimeToMinutes,
   groupConsecutiveLessonsByCourse,
@@ -13,65 +13,196 @@ export class NotificationService {
   private bot: Bot;
   private queue: Queue.Queue<JobData>;
   private chatRepository: ChatRepository;
-  private schedule: Schedule;
+  private credentialsRepo: CredentialsRepository;
 
-  constructor(bot: Bot, chatRepository: ChatRepository) {
+  constructor(
+    bot: Bot,
+    chatRepository: ChatRepository,
+    credentialsRepo: CredentialsRepository
+  ) {
     this.bot = bot;
     this.chatRepository = chatRepository;
+    this.credentialsRepo = credentialsRepo;
+
+    const redisConfig = {
+      host: process.env.REDIS_HOST || "localhost",
+      port: parseInt(process.env.REDIS_PORT || "6379", 10),
+      ...(process.env.REDIS_PASSWORD && {
+        password: process.env.REDIS_PASSWORD,
+      }),
+    };
 
     this.queue = new Queue<JobData>("notifications", {
-      redis: { host: "127.0.0.1", port: 6379 },
+      redis: redisConfig,
     });
 
     this.queue.process(async (job) => {
-      await this.bot.api.sendMessage(job.data.chatId, job.data.message);
+      try {
+        await this.bot.api.sendMessage(job.data.chatId, job.data.message);
+      } catch (error) {
+        console.error(`Failed to send message to ${job.data.chatId}:`, error);
+      }
     });
-
-    const file = path.resolve(process.cwd(), "public/schedule.json");
-    this.schedule = JSON.parse(fs.readFileSync(file, "utf-8")) as Schedule;
   }
 
-  async scheduleDailyMessage() {
-    const dayKey = new Date()
-      .toLocaleDateString("en-US", { weekday: "long" })
-      .toLowerCase();
-    const lessons = this.schedule[dayKey] ?? [];
+  /**
+   * Обновить расписание для всех настроенных чатов
+   */
+  async updateAllSchedules(): Promise<void> {
+    console.log("🔄 Updating schedules for all configured chats...");
 
-    if (lessons.length === 0) {
+    const chats = await this.getAllChatsForNotifications();
+    console.log(`📋 Found ${chats.length} chats to update`);
+
+    for (const chatId of chats) {
+      try {
+        const credentials = await this.credentialsRepo.getCredentials(
+          Number(chatId)
+        );
+
+        if (!credentials) {
+          console.log(`⚠️ Chat ${chatId} has no credentials, skipping...`);
+          continue;
+        }
+
+        console.log(`📥 Fetching schedule for chat ${chatId}...`);
+
+        const result = await scheduleScrapper({
+          username: credentials.username,
+          password: credentials.password,
+        });
+
+        if (result.success && result.schedule) {
+          await this.credentialsRepo.saveSchedule(
+            Number(chatId),
+            result.schedule
+          );
+          console.log(`✅ Schedule updated for chat ${chatId}`);
+        } else {
+          console.error(
+            `❌ Failed to update schedule for chat ${chatId}: ${result.error}`
+          );
+
+          // Уведомляем в чате об ошибке
+          await this.bot.api.sendMessage(
+            chatId,
+            "⚠️ Failed to update schedule. Please check your credentials using /settings"
+          );
+        }
+      } catch (error) {
+        console.error(`❌ Error updating schedule for chat ${chatId}:`, error);
+      }
+    }
+
+    console.log("✅ Schedule update completed for all chats");
+  }
+
+  /**
+   * Получить все чаты для отправки уведомлений
+   * Объединяет чаты из bot:chats и чаты с настроенными credentials
+   */
+  private async getAllChatsForNotifications(): Promise<string[]> {
+    const chatsFromSet = await this.chatRepository.getChats();
+    const chatsFromCredentials =
+      await this.credentialsRepo.getAllConfiguredChats();
+    const allChatIds = new Set([...chatsFromSet, ...chatsFromCredentials]);
+    return Array.from(allChatIds);
+  }
+
+  /**
+   * Отправить утреннее сообщение с расписанием
+   */
+  async scheduleDailyMessage(): Promise<void> {
+    console.log("📅 Starting daily schedule messages...");
+    const chats = await this.getAllChatsForNotifications();
+    console.log(`📋 Found ${chats.length} chats to process`);
+
+    if (chats.length === 0) {
+      console.log("⚠️ No chats found for daily messages");
       return;
     }
 
-    const grouped = groupConsecutiveLessonsByCourse(lessons);
+    const dayKey = new Date()
+      .toLocaleDateString("en-US", { weekday: "long" })
+      .toLowerCase();
+    console.log(`📆 Day key: ${dayKey}`);
 
-    // Формируем сообщение
-    const lessonCount = lessons.length;
-    const lessonWord = lessonCount === 1 ? "lesson" : "lessons";
+    let processedCount = 0;
+    let skippedCount = 0;
+    let errorCount = 0;
 
-    const today = new Date();
-    const formattedDate = today.toLocaleDateString("ru-RU", {
-      day: "numeric",
-      month: "long",
-    });
-    const dayOfWeek = today.toLocaleDateString("ru-RU", { weekday: "long" });
+    for (const chatId of chats) {
+      try {
+        const schedule = await this.credentialsRepo.getSchedule(Number(chatId));
 
-    let msg = `📅 Good morning! Today is ${dayOfWeek}, ${formattedDate}, we have ${lessonCount} ${lessonWord}:\n\n`;
+        if (!schedule) {
+          console.log(`⚠️ Chat ${chatId}: No schedule found, skipping...`);
+          skippedCount++;
+          continue;
+        }
 
-    for (const group of grouped) {
-      const timeRange =
-        group.startTime === group.endTime
-          ? `🕐 ${group.startTime}`
-          : `🕐 ${group.startTime}-${group.endTime}`;
+        const lessons = schedule[dayKey] ?? [];
 
-      msg += `${timeRange} • ${group.course}\n`;
-      msg += `📍 ${group.rooms.join(", ")}\n\n`;
+        if (lessons.length === 0) {
+          console.log(
+            `📭 Chat ${chatId}: No lessons for ${dayKey}, sending empty day message`
+          );
+          await this.queue.add({
+            chatId,
+            message:
+              "📅 Good morning! No lessons scheduled for today. Enjoy your day off! 🎉",
+          });
+          processedCount++;
+          continue;
+        }
+
+        console.log(
+          `📚 Chat ${chatId}: Found ${lessons.length} lessons for ${dayKey}`
+        );
+
+        const grouped = groupConsecutiveLessonsByCourse(lessons);
+
+        const lessonCount = lessons.length;
+        const lessonWord = lessonCount === 1 ? "lesson" : "lessons";
+
+        const today = new Date();
+        const formattedDate = today.toLocaleDateString("en-US", {
+          day: "numeric",
+          month: "long",
+        });
+        const dayOfWeek = today.toLocaleDateString("en-US", {
+          weekday: "long",
+        });
+
+        let msg = `📅 Good morning! Today is ${dayOfWeek}, ${formattedDate}, we have ${lessonCount} ${lessonWord}:\n\n`;
+
+        for (const group of grouped) {
+          const timeRange =
+            group.startTime === group.endTime
+              ? `🕐 ${group.startTime}`
+              : `🕐 ${group.startTime}-${group.endTime}`;
+
+          msg += `${timeRange} • ${group.course}\n`;
+          msg += `📍 ${group.rooms.join(", ")}\n\n`;
+        }
+
+        msg += "Всем удачики!";
+
+        await this.queue.add({ chatId, message: msg });
+        console.log(`✅ Chat ${chatId}: Daily message queued`);
+        processedCount++;
+      } catch (error) {
+        console.error(
+          `❌ Error sending daily message to ${chatId}:`,
+          error instanceof Error ? error.message : error
+        );
+        errorCount++;
+      }
     }
 
-    msg += "Всем удачики!";
-
-    const chats = await this.chatRepository.getChats();
-    for (const id of chats) {
-      await this.queue.add({ chatId: id, message: msg });
-    }
+    console.log(
+      `✅ Daily messages completed: ${processedCount} sent, ${skippedCount} skipped, ${errorCount} errors`
+    );
   }
 
   private groupLessons(lessons: Lesson[]): Lesson[][] {
@@ -108,101 +239,119 @@ export class NotificationService {
     return groups;
   }
 
-  async scheduleLessonsMessages() {
+  /**
+   * Запланировать уведомления о занятиях
+   */
+  async scheduleLessonsMessages(): Promise<void> {
+    console.log("⏰ Starting lesson notifications scheduling...");
+    const chats = await this.getAllChatsForNotifications();
+    console.log(`📋 Found ${chats.length} chats to process`);
+
+    if (chats.length === 0) {
+      console.log("⚠️ No chats found for lesson notifications");
+      return;
+    }
+
     const dayKey = new Date()
       .toLocaleDateString("en-US", { weekday: "long" })
       .toLowerCase();
-    const lessons = this.schedule[dayKey] ?? [];
-    console.log(
-      `📅 Day: ${dayKey}, Lessons:`,
-      lessons.map((l) => l.start_time)
-    );
-    if (lessons.length === 0) return;
+    console.log(`📆 Day key: ${dayKey}`);
 
-    const groups = this.groupLessons(lessons);
-    console.log(
-      `📚 Lesson groups:`,
-      groups.map((g) => g.map((l) => l.start_time))
-    );
-    const chats = await this.chatRepository.getChats();
+    for (const chatId of chats) {
+      try {
+        const schedule = await this.credentialsRepo.getSchedule(Number(chatId));
 
-    const activeJobs = await this.queue.getJobs([
-      "waiting",
-      "delayed",
-      "active",
-    ]);
-    const activeJobIds = new Set<string>(
-      activeJobs.map((job) => String(job.id))
-    );
-
-    for (const group of groups) {
-      for (let i = 0; i < group.length; i++) {
-        const lesson = group[i];
-        if (!lesson) continue;
-
-        console.log(
-          `🕐 Processing lesson: ${lesson.start_time} - ${lesson.course}`
-        );
-
-        const [hours, minutes] = lesson.start_time.split(":").map(Number);
-        if (
-          hours === undefined ||
-          minutes === undefined ||
-          Number.isNaN(hours) ||
-          Number.isNaN(minutes)
-        )
-          continue;
-
-        const start = new Date();
-        start.setHours(hours, minutes, 0, 0);
-
-        let notifyAt: Date;
-        let message: string;
-
-        if (i === 0) {
-          notifyAt = new Date(start.getTime() - 60 * 60 * 1000);
-          message = `👀 The lesson ${lesson.course} will start in one hour and will take place in ${lesson.room}`;
-        } else {
-          notifyAt = new Date(start.getTime() - 10 * 60 * 1000);
-          message = `👀 The next lesson ${lesson.course} will start in 10 minutes and will take place in ${lesson.room}`;
-        }
-
-        console.log(
-          `⏰ Lesson ${
-            lesson.start_time
-          }: notify at ${notifyAt.toLocaleTimeString()}, current time: ${new Date().toLocaleTimeString()}`
-        );
-
-        if (notifyAt <= new Date()) {
-          console.log(
-            `❌ Skipping lesson ${lesson.start_time} - notification time has passed`
-          );
+        if (!schedule) {
+          console.log(`⚠️ No schedule found for chat ${chatId}`);
           continue;
         }
 
-        for (const id of chats) {
-          const jobId = `lesson-${lesson.start_time}-${id}`;
+        const lessons = schedule[dayKey] ?? [];
 
-          if (activeJobIds.has(jobId)) {
-            console.log(
-              `⚠️ Job already exists for lesson ${lesson.start_time} - chat ${id}`
-            );
-            continue;
-          }
+        console.log(
+          `📅 Chat ${chatId} - Day: ${dayKey}, Lessons:`,
+          lessons.map((l: Lesson) => l.start_time)
+        );
 
-          console.log(
-            `✅ Creating job for lesson ${lesson.start_time} - chat ${id}`
-          );
-          await this.queue.add(
-            { chatId: id, message },
-            {
-              delay: notifyAt.getTime() - Date.now(),
-              jobId,
-              removeOnComplete: true,
-              removeOnFail: true,
+        if (lessons.length === 0) continue;
+
+        const groups = this.groupLessons(lessons);
+
+        console.log(
+          `📚 Chat ${chatId} - Lesson groups:`,
+          groups.map((g) => g.map((l) => l.start_time))
+        );
+
+        const activeJobs = await this.queue.getJobs([
+          "waiting",
+          "delayed",
+          "active",
+        ]);
+        const activeJobIds = new Set<string>(
+          activeJobs.map((job) => String(job.id))
+        );
+
+        for (const group of groups) {
+          for (let i = 0; i < group.length; i++) {
+            const lesson = group[i];
+            if (!lesson) continue;
+
+            const [hours, minutes] = lesson.start_time.split(":").map(Number);
+            if (
+              hours === undefined ||
+              minutes === undefined ||
+              Number.isNaN(hours) ||
+              Number.isNaN(minutes)
+            )
+              continue;
+
+            const start = new Date();
+            start.setHours(hours, minutes, 0, 0);
+
+            let notifyAt: Date;
+            let message: string;
+
+            if (i === 0) {
+              notifyAt = new Date(start.getTime() - 60 * 60 * 1000);
+              message = `👀 The lesson ${lesson.course} will start in one hour and will take place in ${lesson.room}`;
+            } else {
+              notifyAt = new Date(start.getTime() - 10 * 60 * 1000);
+              message = `👀 The next lesson ${lesson.course} will start in 10 minutes and will take place in ${lesson.room}`;
             }
-          );
+
+            if (notifyAt <= new Date()) {
+              console.log(
+                `❌ Chat ${chatId} - Skipping lesson ${lesson.start_time} - notification time has passed`
+              );
+              continue;
+            }
+
+            const jobId = `lesson-${chatId}-${lesson.start_time}`;
+
+            if (activeJobIds.has(jobId)) {
+              console.log(
+                `⚠️ Job already exists for chat ${chatId} - lesson ${lesson.start_time}`
+              );
+              continue;
+            }
+
+            console.log(
+              `✅ Creating job for chat ${chatId} - lesson ${lesson.start_time}`
+            );
+
+            await this.queue.add(
+              { chatId, message },
+              {
+                delay: notifyAt.getTime() - Date.now(),
+                jobId,
+                removeOnComplete: true,
+                removeOnFail: true,
+              }
+            );
+          }
         }
+      } catch (error) {
+        console.error(`❌ Error scheduling lessons for chat ${chatId}:`, error);
       }
     }
   }

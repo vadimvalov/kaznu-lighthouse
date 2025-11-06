@@ -3,50 +3,86 @@ import { Bot } from "grammy";
 import cron from "node-cron";
 import { NotificationService } from "./services/notificationService.js";
 import { ChatRepository } from "./services/chat-repository.js";
-import { scheduleScrapper } from "./services/scheduleScrapper.js";
+import { CredentialsRepository } from "./services/credentialsRepository.js";
+import { SettingsHandler } from "./services/settingsHandler.js";
 
 const bot = new Bot(process.env.BOT_TOKEN!);
 const chatRepository = new ChatRepository();
-const service = new NotificationService(bot, chatRepository);
+const credentialsRepo = new CredentialsRepository();
 
 bot.command("ping", async (ctx) => {
-  if (ctx.chat.type === "private") {
-    await ctx.reply("pong");
-  }
+  await ctx.reply("pong");
 });
+
+const service = new NotificationService(bot, chatRepository, credentialsRepo);
+new SettingsHandler(bot, credentialsRepo);
 
 bot.on("my_chat_member", async (ctx) => {
   const update = ctx.myChatMember;
-  if (update) {
-    if (update.new_chat_member.status === "member") {
-      await chatRepository.addChat(ctx.chat?.id!);
-      await ctx.reply("Хелоу всем, я буду помогать нам не просрать уроки!");
-    } else if (
-      update.new_chat_member.status === "left" ||
-      update.new_chat_member.status === "kicked"
-    ) {
-      await chatRepository.removeChat(String(ctx.chat?.id));
-    }
+  const chatId = ctx.chat?.id;
+
+  if (!update || !chatId) {
+    console.error("Missing update or chat ID in my_chat_member event");
+    return;
+  }
+
+  if (update.new_chat_member.status === "member") {
+    await chatRepository.addChat(chatId);
+    await ctx.reply(
+      "👋 Hello everyone! I'll help you not miss your lessons!\n\n" +
+        "To get started, an administrator should use the /settings command."
+    );
+  } else if (
+    update.new_chat_member.status === "left" ||
+    update.new_chat_member.status === "kicked"
+  ) {
+    await chatRepository.removeChat(String(chatId));
+    await credentialsRepo.removeChat(chatId);
   }
 });
 
 cron.schedule(
-  "59 6 * * *",
+  "55 6 * * *",
   async () => {
-    await scheduleScrapper();
+    await service.updateAllSchedules();
   },
   { timezone: "Asia/Almaty" }
 );
 
-cron.schedule("0 7 * * *", () => service.scheduleDailyMessage(), {
-  timezone: "Asia/Almaty",
+cron.schedule(
+  "0 7 * * *",
+  async () => {
+    await service.scheduleDailyMessage();
+  },
+  { timezone: "Asia/Almaty" }
+);
+
+cron.schedule(
+  "0 7 * * *",
+  async () => {
+    await service.scheduleLessonsMessages();
+  },
+  { timezone: "Asia/Almaty" }
+);
+
+process.on("SIGINT", async () => {
+  await credentialsRepo.disconnect();
+  bot.stop();
+  process.exit(0);
 });
 
-cron.schedule("0 7 * * *", () => service.scheduleLessonsMessages(), {
-  timezone: "Asia/Almaty",
+process.on("SIGTERM", async () => {
+  await credentialsRepo.disconnect();
+  bot.stop();
+  process.exit(0);
 });
 
 bot.start();
-console.log(
-  "🤖 Bot started successfully. At 7 am it would cron-schedule messages for the whole day"
-);
+console.log("🤖 Bot started successfully!");
+console.log("📋 Available commands:");
+console.log("  /settings - Configure bot (group chat, admins only)");
+console.log("  /ping - Check if bot is alive");
+console.log("\n⏰ Scheduled tasks:");
+console.log("  06:55 - Update schedules");
+console.log("  07:00 - Send daily messages & schedule lesson notifications");
+console.log("Check this logs, esli chto-to ebnulos'- budet ponyatno");

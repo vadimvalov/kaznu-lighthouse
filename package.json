@@ -1,7 +1,7 @@
 {
   "name": "kaznu-lighthouse",
-  "version": "1.0.0",
-  "description": "Telegram bot for schedule notifications",
+  "version": "2.0.0",
+  "description": "Multi-user Telegram bot for schedule notifications",
   "type": "module",
   "scripts": {
     "build": "tsc",
@@ -10,13 +10,16 @@
     "redis": "./scripts/start-redis.sh",
     "start:full": "./scripts/start-redis.sh && pnpm start",
     "redis:local": "./scripts/start-redis.sh",
-    "check:users": "node scripts/check-users.js",
-    "manage:users": "node scripts/manage-users.js",
-    "redis:cli": "redis-cli"
+    "check:users": "node dist/scripts/check-users.js",
+    "manage:users": "node dist/scripts/manage-users.js",
+    "clear:redis": "pnpm tsx scripts/clear-redis.ts",
+    "redis:cli": "redis-cli",
+    "test:scrapper": "pnpm tsx src/services/scheduleScrapper.ts"
   },
   "devDependencies": {
     "@types/node": "^24.5.2",
     "@types/node-cron": "^3.0.11",
+    "tsx": "^4.7.0",
     "typescript": "^5.9.2"
   },
   "dependencies": {
