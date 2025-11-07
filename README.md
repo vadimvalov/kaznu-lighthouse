@@ -35,8 +35,10 @@ redis-server
 
 ```bash
 pnpm build
-pnpm start
+xvfb-run pnpm start
 ```
+
+xvfb-run необходим для возможности запускать Playwright с Headed браузером на виртуальном дисплее. Univer не рускает headless браузеры лол
 
 ## Как юзать
 
