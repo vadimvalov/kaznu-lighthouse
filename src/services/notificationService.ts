@@ -144,15 +144,7 @@ export class NotificationService {
         const lessons = schedule[dayKey] ?? [];
 
         if (lessons.length === 0) {
-          console.log(
-            `📭 Chat ${chatId}: No lessons for ${dayKey}, sending empty day message`
-          );
-          await this.queue.add({
-            chatId,
-            message:
-              "📅 Good morning! No lessons scheduled for today. Enjoy your day off! 🎉",
-          });
-          processedCount++;
+          console.log(`📭 Chat ${chatId}: No lessons for ${dayKey}, skipping`);
           continue;
         }
 
