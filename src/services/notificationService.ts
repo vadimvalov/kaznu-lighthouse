@@ -178,7 +178,7 @@ export class NotificationService {
           msg += `📍 ${group.rooms.join(", ")}\n\n`;
         }
 
-        msg += "Всем удачики!";
+        msg += "Good luck everyone!";
 
         await this.queue.add({ chatId, message: msg });
         console.log(`✅ Chat ${chatId}: Daily message queued`);
