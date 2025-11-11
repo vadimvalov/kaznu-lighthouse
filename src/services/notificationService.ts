@@ -311,10 +311,30 @@ export class NotificationService {
 
             if (i === 0) {
               notifyAt = new Date(start.getTime() - 60 * 60 * 1000);
-              message = `👀 The lesson ${lesson.course} will start in one hour and will take place in ${lesson.room}`;
+              message =
+                `👀 The lesson will start in an hour:\n` +
+                `⚪️ ${lesson.course}\n` +
+                `📍 ${lesson.room}\n` +
+                (lesson.lessonType
+                  ? `${
+                      lesson.lessonType === "lecture"
+                        ? "📘 Lecture"
+                        : "📙 Seminar"
+                    }`
+                  : "");
             } else {
               notifyAt = new Date(start.getTime() - 10 * 60 * 1000);
-              message = `👀 The next lesson ${lesson.course} will start in 10 minutes and will take place in ${lesson.room}`;
+              message =
+                `👀 Next lesson:\n` +
+                `⚪️ ${lesson.course}\n` +
+                `📍 ${lesson.room}\n` +
+                (lesson.lessonType
+                  ? `${
+                      lesson.lessonType === "lecture"
+                        ? "📘 Lecture"
+                        : "📙 Seminar"
+                    }`
+                  : "");
             }
 
             if (notifyAt <= new Date()) {
