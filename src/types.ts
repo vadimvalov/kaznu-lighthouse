@@ -2,6 +2,7 @@ export type Lesson = {
   start_time: string;
   course: string;
   room: string;
+  lessonType?: "lecture" | "seminar";
 };
 
 export type Schedule = {
@@ -32,4 +33,5 @@ export type GroupedLesson = {
   startTime: string;
   endTime: string;
   rooms: string[];
+  lessonType?: "lecture" | "seminar";
 };

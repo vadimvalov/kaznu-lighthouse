@@ -175,7 +175,13 @@ export class NotificationService {
               : `🕐 ${group.startTime}-${group.endTime}`;
 
           msg += `${timeRange} • ${group.course}\n`;
-          msg += `📍 ${group.rooms.join(", ")}\n\n`;
+          msg += `📍 ${group.rooms.join(", ")}\n`;
+          if (group.lessonType) {
+            const typeLabel =
+              group.lessonType === "lecture" ? "📘 Lecture" : "📙 Seminar";
+            msg += `${typeLabel}\n`;
+          }
+          msg += `\n`;
         }
 
         msg += "Good luck everyone!";

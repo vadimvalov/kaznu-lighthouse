@@ -58,6 +58,8 @@ export function groupConsecutiveLessonsByCourse(
     let endTime = getEndTime(current.start_time);
     const rooms = new Set<string>([current.room]);
     const courseName = current.course;
+    const typesInGroup = new Set<Lesson["lessonType"]>();
+    if (current.lessonType) typesInGroup.add(current.lessonType);
 
     // Находим все последовательные уроки с таким же названием
     let j = i + 1;
@@ -73,6 +75,7 @@ export function groupConsecutiveLessonsByCourse(
       if (next.course === courseName && timeDiff === 60) {
         endTime = getEndTime(next.start_time);
         rooms.add(next.room);
+        if (next.lessonType) typesInGroup.add(next.lessonType);
         j++;
       } else {
         break;
@@ -84,6 +87,8 @@ export function groupConsecutiveLessonsByCourse(
       startTime,
       endTime,
       rooms: Array.from(rooms),
+      lessonType:
+        typesInGroup.size === 1 ? Array.from(typesInGroup)[0] : undefined,
     });
 
     i = j;

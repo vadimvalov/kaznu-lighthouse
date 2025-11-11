@@ -86,6 +86,18 @@ export async function scheduleScrapper(
             course = course!.slice(0, tripleSpaceIndex).trim();
           }
 
+          let lessonType: "lecture" | "seminar" | undefined;
+          const typeMatch = course!.match(/\s*\((lecture|seminar)\)\s*$/i);
+          if (typeMatch) {
+            const found = (typeMatch[1] || "").toLowerCase();
+            if (found === "lecture" || found === "seminar") {
+              lessonType = found as "lecture" | "seminar";
+              course = course!
+                .replace(/\s*\((lecture|seminar)\)\s*$/i, "")
+                .trim();
+            }
+          }
+
           let room = lines.find((l) => l.includes("Hall")) || "";
           room = room
             .replace(/Hall/gi, "")
@@ -93,14 +105,13 @@ export async function scheduleScrapper(
             .replace(/\s+/g, " ")
             .trim();
 
-          result[day]!.push({ start_time: time, course, room });
+          result[day]!.push({ start_time: time, course, room, lessonType });
         });
       });
 
       return result;
     });
 
-    // Удаляем пустые дни
     for (const day in data) {
       if (data[day]!.length === 0) delete data[day];
     }
