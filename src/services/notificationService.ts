@@ -322,7 +322,7 @@ export class NotificationService {
                 lesson.lessonType ? lesson.lessonType : "lesson"
               } of ${
                 lesson.course
-              } will start in an hour and will take place at ${lesson.room}`;
+              } will start in 10 mins and will take place at ${lesson.room}`;
             }
 
             if (notifyAt <= new Date()) {
