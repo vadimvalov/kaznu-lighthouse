@@ -405,49 +405,30 @@ export class NotificationService {
             const now = new Date();
             // Need to parse exam dates carefully. Format: "DD.MM.YYYY"
             
+            console.log(`🔍 Chat ${chatId} checking exams, found ${exams.length} exams`);
+
             for (const exam of exams) {
                 const [day, month, year] = exam.date.split('.').map(Number);
                 const [hours, minutes] = exam.time.split(':').map(Number);
                 
                 const examDate = new Date(year, month - 1, day, hours, minutes);
-                
+                console.log(`📝 Processing exam: ${exam.subject} on ${examDate.toLocaleString()}`);
+
                 // 1. "Today we are having exam!" (7 AM check)
-                // We run this method at 7 AM usually? Or periodically?
-                // If this method runs at 7 AM, we check if exam is TODAY.
-                
-                // Check if exam is today
                 const isToday = now.getDate() === day && now.getMonth() === month - 1 && now.getFullYear() === year;
 
                 if (isToday) {
-                    // Send morning message if it's currently morning (e.g. around 7-8 AM)
-                    // Or we can just check if we are close to 7 AM execution time.
-                    // Assuming this function is called at 7 AM.
-                    // Let's check if we already sent it? No state tracking for now, maybe just rely on cron time.
-                    
-                    // Actually, the user wants: "Вывести сообщение в 7 утра Today we are having exam ..."
-                    // So if I run this at 7 AM:
                     const msg = `Today we are having exam ${exam.subject} in ${exam.time}, which would take place at ${exam.room}`;
-                    // Send immediately as it is morning message
+                    console.log(`📨 Sending today's exam message for ${exam.subject}`);
                     await this.bot.api.sendMessage(chatId, msg);
+                } else {
+                     console.log(`⏭ Not today for ${exam.subject} (Exam date: ${day}.${month}.${year}, Now: ${now.getDate()}.${now.getMonth()+1}.${now.getFullYear()})`);
                 }
 
-                // 2. "The exam of !Subject! will start in 2 hours..."
 
-
-
-                // If roughly 2 hours left (e.g. between 1.9 and 2.1 hours, or just schedule a job if it's in the future)
-                // Better: Schedule a job when we update schedules? No, we might update schedules daily.
-                
-                // The prompt says: "вывести сообщение за 2 часа до сессии".
-                // If I run this check every hour or so, I can catch it.
-                // OR, I can use the Bull queue to schedule it in advance like lessons.
-                
-                // Let's use Bull queue logic similar to lessons.
-                // Notification time: 2 hours before exam.
                 const notificationTime = new Date(examDate.getTime() - 2 * 60 * 60 * 1000);
                 
                 if (notificationTime > now) {
-                     // Schedule it
                      const jobId = `exam-${chatId}-${exam.subject}-${exam.date}`;
                      const activeJobs = await this.queue.getJobs(['waiting', 'delayed', 'active']);
                      const exists = activeJobs.find(j => j.id === jobId);
@@ -460,7 +441,11 @@ export class NotificationService {
                              removeOnComplete: true
                          });
                          console.log(`✅ Scheduled exam notification for ${chatId} at ${notificationTime}`);
+                     } else {
+                         console.log(`⚠️ Notification already scheduled for ${exam.subject}`);
                      }
+                } else {
+                    console.log(`❌ Too late to schedule 2h notification for ${exam.subject} (Notify at: ${notificationTime.toLocaleString()})`);
                 }
             }
         } catch (error) {
