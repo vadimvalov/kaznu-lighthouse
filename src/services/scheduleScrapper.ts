@@ -129,12 +129,16 @@ export async function scheduleScrapper(
          // "If main schedule unavailable, check exams". Empty schedule might count as unavailable.
          // Let's scrape exams.
          
-        const examScheduleLink = "https://univer.kaznu.kz/student/myexam/schedule/";
+        const examScheduleLink = "https://univer.kaznu.kz/student/myexam/schedule"; // removed trailing slash 
         await page.goto(examScheduleLink);
 
         try {
-            await page.waitForSelector("#scheduleList", { timeout: 5000 });
-            
+            await page.waitForTimeout(3000); // Give it some time
+            // Try waiting for ANY table to ensure page loaded
+            try {
+                await page.waitForSelector("table", { timeout: 8000 });
+            } catch (e) {}
+
             const examData = await page.evaluate(() => {
                 const result: any[] = [];
                 const rows = Array.from(document.querySelectorAll("#scheduleList > tbody > tr"));

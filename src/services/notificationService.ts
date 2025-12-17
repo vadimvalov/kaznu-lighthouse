@@ -138,6 +138,34 @@ export class NotificationService {
 
     for (const chatId of chats) {
       try {
+        // Check for exams first
+        let examToday = false;
+        try {
+            const exams = await this.credentialsRepo.getExamSchedule(Number(chatId)) as Exam[] | null;
+            if (exams && exams.length > 0) {
+                 const now = new Date();
+                 for (const exam of exams) {
+                    const [day, month, year] = exam.date.split('.').map(Number);
+                    if (!day || !month || !year) continue;
+
+                    const isToday = now.getDate() === day && now.getMonth() === month - 1 && now.getFullYear() === year;
+                    
+                    if (isToday) {
+                        examToday = true;
+                        const msg = `Today we are having exam ${exam.subject} in ${exam.time}, which would take place at ${exam.room}`;
+                         await this.bot.api.sendMessage(chatId, msg);
+                         console.log(`📨 Sent daily exam message for ${exam.subject} (replacing lesson schedule)`);
+                    }
+                 }
+            }
+        } catch (e) {
+            console.error(`❌ Error checking exams in daily message for ${chatId}:`, e);
+        }
+
+        if (examToday) {
+            continue;
+        }
+
         const schedule = await this.credentialsRepo.getSchedule(Number(chatId));
 
         if (!schedule) {
@@ -262,6 +290,58 @@ export class NotificationService {
 
     for (const chatId of chats) {
       try {
+        // Check for exams first
+        let examToday = false;
+        try {
+            const exams = await this.credentialsRepo.getExamSchedule(Number(chatId)) as Exam[] | null;
+            if (exams && exams.length > 0) {
+                 const now = new Date();
+                 console.log(`🔍 Chat ${chatId} checking exams, found ${exams.length} exams`);
+
+                 for (const exam of exams) {
+                    const [day, month, year] = exam.date.split('.').map(Number);
+                    const [hours, minutes] = exam.time.split(':').map(Number);
+                    if (!day || !month || !year || hours === undefined) continue;
+
+                    const examDate = new Date(year, month - 1, day, hours, minutes);
+                    
+                    const isToday = now.getDate() === day && now.getMonth() === month - 1 && now.getFullYear() === year;
+                    
+                    if (isToday) {
+                        examToday = true;
+                        const msg = `Today we are having exam ${exam.subject} in ${exam.time}, which would take place at ${exam.room}`;
+                         await this.bot.api.sendMessage(chatId, msg);
+                         console.log(`📨 Sent today's exam message for ${exam.subject}`);
+                    }
+
+                    const notificationTime = new Date(examDate.getTime() - 2 * 60 * 60 * 1000);
+                    
+                    if (notificationTime > now) {
+                         const jobId = `exam-${chatId}-${exam.subject}-${exam.date}`;
+                         const activeJobs = await this.queue.getJobs(['waiting', 'delayed', 'active']);
+                         const exists = activeJobs.find(j => j.id === jobId);
+                         
+                         if (!exists) {
+                             const msg = `The exam of ${exam.subject} will start in 2 hours and would take place at ${exam.room}. Good luck! <3`;
+                             await this.queue.add({ chatId, message: msg }, {
+                                 delay: notificationTime.getTime() - now.getTime(),
+                                 jobId,
+                                 removeOnComplete: true
+                             });
+                             console.log(`✅ Scheduled exam notification for ${chatId} at ${notificationTime}`);
+                         }
+                    }
+                 }
+            }
+        } catch (e) {
+            console.error(`❌ Error scheduling exams for chat ${chatId}:`, e);
+        }
+
+        if (examToday) {
+             console.log(`✅ Exam today for chat ${chatId}, skipping lesson checks.`);
+             continue; 
+        }
+
         const schedule = await this.credentialsRepo.getSchedule(Number(chatId));
 
         if (!schedule) {
@@ -295,130 +375,73 @@ export class NotificationService {
         );
 
         for (const group of groups) {
-          for (let i = 0; i < group.length; i++) {
-            const lesson = group[i];
-            if (!lesson) continue;
-
-            const [hours, minutes] = lesson.start_time.split(":").map(Number);
-            if (
-              hours === undefined ||
-              minutes === undefined ||
-              Number.isNaN(hours) ||
-              Number.isNaN(minutes)
-            )
-              continue;
-
-            const start = new Date();
-            start.setHours(hours, minutes, 0, 0);
-
-            let notifyAt: Date;
-            let message: string;
-
-            if (i === 0) {
-              notifyAt = new Date(start.getTime() - 60 * 60 * 1000);
-              message = `👀 The ${
-                lesson.lessonType ? lesson.lessonType : "lesson"
-              } of ${
-                lesson.course
-              } will start in an hour and will take place at ${lesson.room}`;
-            } else {
-              notifyAt = new Date(start.getTime() - 10 * 60 * 1000);
-              message = `👀 The next ${
-                lesson.lessonType ? lesson.lessonType : "lesson"
-              } of ${
-                lesson.course
-              } will start in 10 mins and will take place at ${lesson.room}`;
+            for (let i = 0; i < group.length; i++) {
+                const lesson = group[i];
+                if (!lesson) continue;
+    
+                const [hours, minutes] = lesson.start_time.split(":").map(Number);
+                if (
+                  hours === undefined ||
+                  minutes === undefined ||
+                  Number.isNaN(hours) ||
+                  Number.isNaN(minutes)
+                )
+                  continue;
+    
+                const start = new Date();
+                start.setHours(hours, minutes, 0, 0);
+    
+                let notifyAt: Date;
+                let message: string;
+    
+                if (i === 0) {
+                  notifyAt = new Date(start.getTime() - 60 * 60 * 1000);
+                  message = `👀 The ${
+                    lesson.lessonType ? lesson.lessonType : "lesson"
+                  } of ${
+                    lesson.course
+                  } will start in an hour and will take place at ${lesson.room}`;
+                } else {
+                  notifyAt = new Date(start.getTime() - 10 * 60 * 1000);
+                  message = `👀 The next ${
+                    lesson.lessonType ? lesson.lessonType : "lesson"
+                  } of ${
+                    lesson.course
+                  } will start in 10 mins and will take place at ${lesson.room}`;
+                }
+    
+                if (notifyAt <= new Date()) {
+                  console.log(
+                    `❌ Chat ${chatId} - Skipping lesson ${lesson.start_time} - notification time has passed`
+                  );
+                  continue;
+                }
+    
+                const jobId = `lesson-${chatId}-${lesson.start_time}`;
+    
+                if (activeJobIds.has(jobId)) {
+                  console.log(
+                    `⚠️ Job already exists for chat ${chatId} - lesson ${lesson.start_time}`
+                  );
+                  continue;
+                }
+    
+                console.log(
+                  `✅ Creating job for chat ${chatId} - lesson ${lesson.start_time}`
+                );
+    
+                await this.queue.add(
+                  { chatId, message },
+                  {
+                    delay: notifyAt.getTime() - Date.now(),
+                    jobId,
+                    removeOnComplete: true,
+                    removeOnFail: true,
+                  }
+                );
             }
-
-            if (notifyAt <= new Date()) {
-              console.log(
-                `❌ Chat ${chatId} - Skipping lesson ${lesson.start_time} - notification time has passed`
-              );
-              continue;
-            }
-
-            const jobId = `lesson-${chatId}-${lesson.start_time}`;
-
-            if (activeJobIds.has(jobId)) {
-              console.log(
-                `⚠️ Job already exists for chat ${chatId} - lesson ${lesson.start_time}`
-              );
-              continue;
-            }
-
-            console.log(
-              `✅ Creating job for chat ${chatId} - lesson ${lesson.start_time}`
-            );
-
-            await this.queue.add(
-              { chatId, message },
-              {
-                delay: notifyAt.getTime() - Date.now(),
-                jobId,
-                removeOnComplete: true,
-                removeOnFail: true,
-              }
-            );
-          }
         }
-        // Check for exams
-        try {
-            const exams = await this.credentialsRepo.getExamSchedule(Number(chatId)) as Exam[] | null;
-            if (exams && exams.length > 0) {
-                 const now = new Date();
-                 console.log(`� Chat ${chatId} checking exams, found ${exams.length} exams`);
 
-                 for (const exam of exams) {
-                    const [day, month, year] = exam.date.split('.').map(Number);
-                    const [hours, minutes] = exam.time.split(':').map(Number);
-                    if (!day || !month || !year || hours === undefined) continue;
-
-                    const examDate = new Date(year, month - 1, day, hours, minutes);
-                    
-                    // 1. "Today we are having exam!"
-                    // Check if exam is today
-                    const isToday = now.getDate() === day && now.getMonth() === month - 1 && now.getFullYear() === year;
-                    
-                    if (isToday) {
-                        // This logic is running at ~7 AM (daily message time)
-                        // If we are calling this from scheduleDailyMessage (or similar time)
-                        // Wait, this method is scheduleLessonsMessages.
-                        // I should verify if I should send the "Today" message here.
-                        // User wants: "Вывести сообщение в 7 утра Today we are having exam"
-                        // `scheduleLessonsMessages` runs at 7 AM.
-                        // So I can send it here.
-                        
-                        // We need to avoid sending it multiple times if we run this often.
-                        // But it runs once a day at 7 AM by cron.
-                        const msg = `Today we are having exam ${exam.subject} in ${exam.time}, which would take place at ${exam.room}`;
-                        // We can queue it or send immediately.
-                         await this.bot.api.sendMessage(chatId, msg);
-                         console.log(`📨 Sent today's exam message for ${exam.subject}`);
-                    }
-
-                    // 2. "The exam of !Subject! will start in 2 hours..."
-                    const notificationTime = new Date(examDate.getTime() - 2 * 60 * 60 * 1000);
-                    
-                    if (notificationTime > now) {
-                         const jobId = `exam-${chatId}-${exam.subject}-${exam.date}`;
-                         const activeJobs = await this.queue.getJobs(['waiting', 'delayed', 'active']);
-                         const exists = activeJobs.find(j => j.id === jobId);
-                         
-                         if (!exists) {
-                             const msg = `The exam of ${exam.subject} will start in 2 hours and would take place at ${exam.room}. Good luck! <3`;
-                             await this.queue.add({ chatId, message: msg }, {
-                                 delay: notificationTime.getTime() - now.getTime(),
-                                 jobId,
-                                 removeOnComplete: true
-                             });
-                             console.log(`✅ Scheduled exam notification for ${chatId} at ${notificationTime}`);
-                         }
-                    }
-                 }
-            }
-        } catch (e) {
-            console.error(`❌ Error scheduling exams for chat ${chatId}:`, e);
-        }
 
       } catch (error) {
         console.error(`❌ Error scheduling lessons for chat ${chatId}:`, error);
