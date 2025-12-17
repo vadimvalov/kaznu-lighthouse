@@ -1,5 +1,5 @@
 import { chromium } from "playwright";
-import type { Schedule } from "../types.js";
+import type { Schedule, Exam } from "../types.js";
 
 export interface ScrapperCredentials {
   username: string;
@@ -9,6 +9,7 @@ export interface ScrapperCredentials {
 export interface ScrapperResult {
   success: boolean;
   schedule?: Schedule;
+  exams?: Exam[];
   error?: string;
 }
 
@@ -115,12 +116,115 @@ export async function scheduleScrapper(
     for (const day in data) {
       if (data[day]!.length === 0) delete data[day];
     }
+    
+    
+    // Check if main schedule is essentially empty (no lessons)
+    const hasLessons = Object.keys(data).length > 0;
+    
+    let exams: Exam[] | undefined = undefined; 
+
+    
+    if (!hasLessons) {
+         // Fallback to exams if no lessons found (or maybe always check? User said "Если недоступно по какой-то причине расписание... проверь еще myexam")
+         // "If main schedule unavailable, check exams". Empty schedule might count as unavailable.
+         // Let's scrape exams.
+         
+        const examScheduleLink = "https://univer.kaznu.kz/student/myexam/schedule/";
+        await page.goto(examScheduleLink);
+
+        try {
+            await page.waitForSelector("#scheduleList", { timeout: 5000 });
+            
+            const examData = await page.evaluate(() => {
+                const result: any[] = [];
+                const rows = Array.from(document.querySelectorAll("#scheduleList > tbody > tr"));
+                let currentDateTimeStr = "";
+
+                for (const row of rows) {
+                    const th = row.querySelector("th");
+                    if (th) {
+                        const text = th.innerText.trim(); 
+                        const match = text.match(/(\d{2}\.\d{2}\.\d{4})\s+(\d{2}:\d{2})/);
+                        if (match && match[1] && match[2]) {
+                            currentDateTimeStr = `${match[1]} ${match[2]}`;
+                        }
+                        continue;
+                    }
+
+                    if (row.classList.contains("link")) {
+                        const tds = row.querySelectorAll("td");
+                        if (tds.length < 4) continue;
+
+                        const subject = (tds[0]?.innerText || "").trim();
+                        const typeFull = (tds[2]?.innerText || "").trim(); 
+                        const roomFull = (tds[3]?.innerText || "").trim();
+                        
+                        // console.log("Found row:", subject, typeFull); // Debug in browser console, but we want it in node output if possible.
+                        // We can't easily get it in node output from evaluate.
+                        // We can return debug info.
+                        
+                        const isExam = typeFull.toLowerCase().includes("экзамен");
+                        if (!isExam) continue; 
+
+                        const type = "Экзамен";
+
+                        let room = roomFull;
+                        const roomMatch = roomFull.split("Ауд.:");
+                        if (roomMatch.length > 1 && roomMatch[1]) {
+                            room = roomMatch[1].trim();
+                        }
+
+                        if (!currentDateTimeStr) continue;
+
+                        const parts = currentDateTimeStr.split(' ');
+                        const datePart = parts[0]!;
+                        const timePart = parts[1]!;
+
+                        result.push({
+                            subject,
+                            date: datePart,
+                            time: timePart,
+                            room,
+                            type
+                        });
+                    }
+                }
+                return result;
+            });
+            
+            console.log(`🔍 [ExamScraper] Found ${examData.length} exams`);
+            
+            if (examData.length > 0) {
+                 exams = examData;
+            } else {
+                 console.log("⚠️ [ExamScraper] No exams found in table.");
+            }
+
+        } catch (e) {
+            console.warn("Failed to scrape exams or element not found:", e);
+            // Don't fail the whole process if exams fail, unless main schedule also failed?
+            // "если и тогда не получилось- тогда ошибка"
+        }
+    }
 
     await browser.close();
 
+    // If both undefined/empty -> return error or empty schedule?
+    // If hasLessons -> success.
+    // If !hasLessons && exams -> success (with exams).
+    // If !hasLessons && !exams -> fail?
+    
+    if (!hasLessons && (!exams || exams.length === 0)) {
+        return {
+             success: false,
+             error: "No schedule or exams found" // User: "если и тогда не получилось- тогда ошибка"
+        };
+    }
+
     return {
       success: true,
-      schedule: data as Schedule,
+      schedule: data as Schedule, 
+      exams // We need to add this property to ScrapperResult interface
     };
   } catch (error) {
     if (browser) {

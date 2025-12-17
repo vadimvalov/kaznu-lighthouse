@@ -3,8 +3,7 @@ import { Bot } from "grammy";
 import { ChatRepository } from "./chat-repository.js";
 import { CredentialsRepository } from "./credentialsRepository.js";
 import { scheduleScrapper } from "./scheduleScrapper.js";
-import { examScrapper } from "./examScrapper.js";
-import type { Lesson, JobData } from "../types.js";
+import type { Lesson, JobData, Exam } from "../types.js";
 import {
   parseTimeToMinutes,
   groupConsecutiveLessonsByCourse,
@@ -73,22 +72,27 @@ export class NotificationService {
           password: credentials.password,
         });
 
-        if (result.success && result.schedule) {
-          await this.credentialsRepo.saveSchedule(
-            Number(chatId),
-            result.schedule
-          );
-          console.log(`✅ Schedule updated for chat ${chatId}`);
+        if (result.success) {
+          if (result.schedule) {
+             await this.credentialsRepo.saveSchedule(
+                Number(chatId),
+                result.schedule
+             );
+          }
+          if (result.exams) {
+             await this.credentialsRepo.saveExamSchedule(
+                Number(chatId),
+                result.exams
+             );
+          }
+          console.log(`✅ Schedule updated for chat ${chatId} (Lessons: ${!!result.schedule}, Exams: ${!!result.exams})`);
         } else {
-          console.error(
-            `❌ Failed to update schedule for chat ${chatId}: ${result.error}`
-          );
-
-          // Уведомляем в чате об ошибке
-          await this.bot.api.sendMessage(
-            chatId,
-            "⚠️ Failed to update schedule. Please check your credentials using /settings"
-          );
+             // ... error handling
+             console.error(`❌ Failed to update schedule for chat ${chatId}: ${result.error}`);
+              await this.bot.api.sendMessage(
+                chatId,
+                "⚠️ Failed to update schedule. Please check your credentials using /settings"
+              );
         }
       } catch (error) {
         console.error(`❌ Error updating schedule for chat ${chatId}:`, error);
@@ -357,100 +361,68 @@ export class NotificationService {
             );
           }
         }
+        // Check for exams
+        try {
+            const exams = await this.credentialsRepo.getExamSchedule(Number(chatId)) as Exam[] | null;
+            if (exams && exams.length > 0) {
+                 const now = new Date();
+                 console.log(`� Chat ${chatId} checking exams, found ${exams.length} exams`);
+
+                 for (const exam of exams) {
+                    const [day, month, year] = exam.date.split('.').map(Number);
+                    const [hours, minutes] = exam.time.split(':').map(Number);
+                    if (!day || !month || !year || hours === undefined) continue;
+
+                    const examDate = new Date(year, month - 1, day, hours, minutes);
+                    
+                    // 1. "Today we are having exam!"
+                    // Check if exam is today
+                    const isToday = now.getDate() === day && now.getMonth() === month - 1 && now.getFullYear() === year;
+                    
+                    if (isToday) {
+                        // This logic is running at ~7 AM (daily message time)
+                        // If we are calling this from scheduleDailyMessage (or similar time)
+                        // Wait, this method is scheduleLessonsMessages.
+                        // I should verify if I should send the "Today" message here.
+                        // User wants: "Вывести сообщение в 7 утра Today we are having exam"
+                        // `scheduleLessonsMessages` runs at 7 AM.
+                        // So I can send it here.
+                        
+                        // We need to avoid sending it multiple times if we run this often.
+                        // But it runs once a day at 7 AM by cron.
+                        const msg = `Today we are having exam ${exam.subject} in ${exam.time}, which would take place at ${exam.room}`;
+                        // We can queue it or send immediately.
+                         await this.bot.api.sendMessage(chatId, msg);
+                         console.log(`📨 Sent today's exam message for ${exam.subject}`);
+                    }
+
+                    // 2. "The exam of !Subject! will start in 2 hours..."
+                    const notificationTime = new Date(examDate.getTime() - 2 * 60 * 60 * 1000);
+                    
+                    if (notificationTime > now) {
+                         const jobId = `exam-${chatId}-${exam.subject}-${exam.date}`;
+                         const activeJobs = await this.queue.getJobs(['waiting', 'delayed', 'active']);
+                         const exists = activeJobs.find(j => j.id === jobId);
+                         
+                         if (!exists) {
+                             const msg = `The exam of ${exam.subject} will start in 2 hours and would take place at ${exam.room}. Good luck! <3`;
+                             await this.queue.add({ chatId, message: msg }, {
+                                 delay: notificationTime.getTime() - now.getTime(),
+                                 jobId,
+                                 removeOnComplete: true
+                             });
+                             console.log(`✅ Scheduled exam notification for ${chatId} at ${notificationTime}`);
+                         }
+                    }
+                 }
+            }
+        } catch (e) {
+            console.error(`❌ Error scheduling exams for chat ${chatId}:`, e);
+        }
+
       } catch (error) {
         console.error(`❌ Error scheduling lessons for chat ${chatId}:`, error);
       }
-    }
-  }
-  async updateExamSchedules(): Promise<void> {
-    console.log("🔄 Updating exam schedules for all configured chats...");
-
-    const chats = await this.getAllChatsForNotifications();
-    
-    for (const chatId of chats) {
-      try {
-        const credentials = await this.credentialsRepo.getCredentials(
-          Number(chatId)
-        );
-
-        if (!credentials) continue;
-
-        const result = await examScrapper({
-          username: credentials.username,
-          password: credentials.password,
-        });
-
-        if (result.success && result.exams) {
-            await this.credentialsRepo.saveExamSchedule(Number(chatId), result.exams);
-            console.log(`✅ Exam schedule updated for chat ${chatId}`);
-        } else {
-             console.error(`❌ Failed to update exam schedule for chat ${chatId}: ${result.error}`);
-        }
-      } catch (error) {
-        console.error(`❌ Error updating exam schedule for chat ${chatId}:`, error);
-      }
-    }
-    console.log("✅ Exam schedule update completed");
-  }
-
-  async scheduleExamNotifications(): Promise<void> {
-    console.log("🎓 Checking for exam notifications...");
-    const chats = await this.getAllChatsForNotifications();
-
-    for (const chatId of chats) {
-        try {
-            const exams = await this.credentialsRepo.getExamSchedule(Number(chatId));
-            if (!exams || exams.length === 0) continue;
-
-            const now = new Date();
-            // Need to parse exam dates carefully. Format: "DD.MM.YYYY"
-            
-            console.log(`🔍 Chat ${chatId} checking exams, found ${exams.length} exams`);
-
-            for (const exam of exams) {
-                const [day, month, year] = exam.date.split('.').map(Number);
-                const [hours, minutes] = exam.time.split(':').map(Number);
-                
-                const examDate = new Date(year, month - 1, day, hours, minutes);
-                console.log(`📝 Processing exam: ${exam.subject} on ${examDate.toLocaleString()}`);
-
-                // 1. "Today we are having exam!" (7 AM check)
-                const isToday = now.getDate() === day && now.getMonth() === month - 1 && now.getFullYear() === year;
-
-                if (isToday) {
-                    const msg = `Today we are having exam ${exam.subject} in ${exam.time}, which would take place at ${exam.room}`;
-                    console.log(`📨 Sending today's exam message for ${exam.subject}`);
-                    await this.bot.api.sendMessage(chatId, msg);
-                } else {
-                     console.log(`⏭ Not today for ${exam.subject} (Exam date: ${day}.${month}.${year}, Now: ${now.getDate()}.${now.getMonth()+1}.${now.getFullYear()})`);
-                }
-
-
-                const notificationTime = new Date(examDate.getTime() - 2 * 60 * 60 * 1000);
-                
-                if (notificationTime > now) {
-                     const jobId = `exam-${chatId}-${exam.subject}-${exam.date}`;
-                     const activeJobs = await this.queue.getJobs(['waiting', 'delayed', 'active']);
-                     const exists = activeJobs.find(j => j.id === jobId);
-                     
-                     if (!exists) {
-                         const msg = `The exam of ${exam.subject} will start in 2 hours and would take place at ${exam.room}. Good luck! <3`;
-                         await this.queue.add({ chatId, message: msg }, {
-                             delay: notificationTime.getTime() - now.getTime(),
-                             jobId,
-                             removeOnComplete: true
-                         });
-                         console.log(`✅ Scheduled exam notification for ${chatId} at ${notificationTime}`);
-                     } else {
-                         console.log(`⚠️ Notification already scheduled for ${exam.subject}`);
-                     }
-                } else {
-                    console.log(`❌ Too late to schedule 2h notification for ${exam.subject} (Notify at: ${notificationTime.toLocaleString()})`);
-                }
-            }
-        } catch (error) {
-            console.error(`❌ Error scheduling exam notifications for ${chatId}:`, error);
-        }
     }
   }
 }
