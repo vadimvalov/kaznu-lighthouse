@@ -3,6 +3,7 @@ import { Bot } from "grammy";
 import { ChatRepository } from "./chat-repository.js";
 import { CredentialsRepository } from "./credentialsRepository.js";
 import { scheduleScrapper } from "./scheduleScrapper.js";
+import { examScrapper } from "./examScrapper.js";
 import type { Lesson, JobData } from "../types.js";
 import {
   parseTimeToMinutes,
@@ -361,4 +362,111 @@ export class NotificationService {
       }
     }
   }
+  async updateExamSchedules(): Promise<void> {
+    console.log("🔄 Updating exam schedules for all configured chats...");
+
+    const chats = await this.getAllChatsForNotifications();
+    
+    for (const chatId of chats) {
+      try {
+        const credentials = await this.credentialsRepo.getCredentials(
+          Number(chatId)
+        );
+
+        if (!credentials) continue;
+
+        const result = await examScrapper({
+          username: credentials.username,
+          password: credentials.password,
+        });
+
+        if (result.success && result.exams) {
+            await this.credentialsRepo.saveExamSchedule(Number(chatId), result.exams);
+            console.log(`✅ Exam schedule updated for chat ${chatId}`);
+        } else {
+             console.error(`❌ Failed to update exam schedule for chat ${chatId}: ${result.error}`);
+        }
+      } catch (error) {
+        console.error(`❌ Error updating exam schedule for chat ${chatId}:`, error);
+      }
+    }
+    console.log("✅ Exam schedule update completed");
+  }
+
+  async scheduleExamNotifications(): Promise<void> {
+    console.log("🎓 Checking for exam notifications...");
+    const chats = await this.getAllChatsForNotifications();
+
+    for (const chatId of chats) {
+        try {
+            const exams = await this.credentialsRepo.getExamSchedule(Number(chatId));
+            if (!exams || exams.length === 0) continue;
+
+            const now = new Date();
+            // Need to parse exam dates carefully. Format: "DD.MM.YYYY"
+            
+            for (const exam of exams) {
+                const [day, month, year] = exam.date.split('.').map(Number);
+                const [hours, minutes] = exam.time.split(':').map(Number);
+                
+                const examDate = new Date(year, month - 1, day, hours, minutes);
+                
+                // 1. "Today we are having exam!" (7 AM check)
+                // We run this method at 7 AM usually? Or periodically?
+                // If this method runs at 7 AM, we check if exam is TODAY.
+                
+                // Check if exam is today
+                const isToday = now.getDate() === day && now.getMonth() === month - 1 && now.getFullYear() === year;
+
+                if (isToday) {
+                    // Send morning message if it's currently morning (e.g. around 7-8 AM)
+                    // Or we can just check if we are close to 7 AM execution time.
+                    // Assuming this function is called at 7 AM.
+                    // Let's check if we already sent it? No state tracking for now, maybe just rely on cron time.
+                    
+                    // Actually, the user wants: "Вывести сообщение в 7 утра Today we are having exam ..."
+                    // So if I run this at 7 AM:
+                    const msg = `Today we are having exam ${exam.subject} in ${exam.time}, which would take place at ${exam.room}`;
+                    // Send immediately as it is morning message
+                    await this.bot.api.sendMessage(chatId, msg);
+                }
+
+                // 2. "The exam of !Subject! will start in 2 hours..."
+
+
+
+                // If roughly 2 hours left (e.g. between 1.9 and 2.1 hours, or just schedule a job if it's in the future)
+                // Better: Schedule a job when we update schedules? No, we might update schedules daily.
+                
+                // The prompt says: "вывести сообщение за 2 часа до сессии".
+                // If I run this check every hour or so, I can catch it.
+                // OR, I can use the Bull queue to schedule it in advance like lessons.
+                
+                // Let's use Bull queue logic similar to lessons.
+                // Notification time: 2 hours before exam.
+                const notificationTime = new Date(examDate.getTime() - 2 * 60 * 60 * 1000);
+                
+                if (notificationTime > now) {
+                     // Schedule it
+                     const jobId = `exam-${chatId}-${exam.subject}-${exam.date}`;
+                     const activeJobs = await this.queue.getJobs(['waiting', 'delayed', 'active']);
+                     const exists = activeJobs.find(j => j.id === jobId);
+                     
+                     if (!exists) {
+                         const msg = `The exam of ${exam.subject} will start in 2 hours and would take place at ${exam.room}. Good luck! <3`;
+                         await this.queue.add({ chatId, message: msg }, {
+                             delay: notificationTime.getTime() - now.getTime(),
+                             jobId,
+                             removeOnComplete: true
+                         });
+                         console.log(`✅ Scheduled exam notification for ${chatId} at ${notificationTime}`);
+                     }
+                }
+            }
+        } catch (error) {
+            console.error(`❌ Error scheduling exam notifications for ${chatId}:`, error);
+        }
+    }
+  }
 }
+

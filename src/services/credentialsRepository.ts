@@ -62,6 +62,26 @@ export class CredentialsRepository {
   }
 
   /**
+   * Сохранить расписание экзаменов для чата
+   */
+  async saveExamSchedule(chatId: number, exams: any[]): Promise<void> {
+    const key = `chat:${chatId}:exams`;
+    await this.redis.set(key, JSON.stringify(exams));
+  }
+
+  /**
+   * Получить расписание экзаменов для чата
+   */
+  async getExamSchedule(chatId: number): Promise<any[] | null> {
+    const key = `chat:${chatId}:exams`;
+    const data = await this.redis.get(key);
+
+    if (!data) return null;
+
+    return JSON.parse(data);
+  }
+
+  /**
    * Проверить, настроен ли бот для чата
    */
   async isConfigured(chatId: number): Promise<boolean> {

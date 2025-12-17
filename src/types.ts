@@ -5,6 +5,14 @@ export type Lesson = {
   lessonType?: "lecture" | "seminar";
 };
 
+export type Exam = {
+  subject: string;
+  date: string;
+  time: string;
+  room: string;
+  type: string;
+};
+
 export type Schedule = {
   [key: string]: Lesson[];
 };
@@ -26,6 +34,7 @@ export type QueueStats = {
 export type JobData = {
   chatId: string;
   message: string;
+  scheduledTime?: number;
 };
 
 export type GroupedLesson = {

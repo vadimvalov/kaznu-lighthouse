@@ -65,6 +65,22 @@ cron.schedule(
   { timezone: "Asia/Almaty" }
 );
 
+cron.schedule(
+  "0 5 * * *",
+  async () => {
+    await service.updateExamSchedules();
+  },
+  { timezone: "Asia/Almaty" }
+);
+
+cron.schedule(
+  "0 7 * * *",
+  async () => {
+    await service.scheduleExamNotifications();
+  },
+  { timezone: "Asia/Almaty" }
+);
+
 process.on("SIGINT", async () => {
   await credentialsRepo.disconnect();
   bot.stop();
